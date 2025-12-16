@@ -299,11 +299,16 @@ def plot_tower_3d(eggs, guy_system=None, show_cables=True, show_surface=True,
     ax.plot_surface(xx, yy, zz, color=ground_color, alpha=0.2)
     
     # Set labels and title
-    ax.set_xlabel('X (m)', fontsize=10)
-    ax.set_ylabel('Y (m)', fontsize=10)
-    ax.set_zlabel('Height (m)', fontsize=10)
+    ax.set_xlabel('X (m)', fontsize=40, labelpad=30)
+    ax.set_ylabel('Y (m)', fontsize=40, labelpad=30)
+    ax.set_zlabel('Height (m)', fontsize=40, labelpad=30)
     ax.set_title(f'Egg Tower 3D Visualization\n{n_eggs} eggs, {total_height:.0f}m tall, {arm_radius_factor:.0f}× arm extension', 
-                fontsize=12, fontweight='bold')
+                fontsize=48, fontweight='bold')
+    
+    # Set tick label sizes (4x default ~10 = 40)
+    ax.tick_params(axis='x', labelsize=40, pad=15)
+    ax.tick_params(axis='y', labelsize=40, pad=15)
+    ax.tick_params(axis='z', labelsize=40, pad=15)
     
     # Set equal aspect ratio for x and y
     ax.set_box_aspect([1, 1, total_height / (ground_size * 2)])

@@ -28,6 +28,7 @@ from three_d_visualization import plot_tower_3d, plot_stress_distribution_3d
 from active_stabilization import design_active_stabilization
 from elevator_system import design_elevator_system
 from project_costs import calculate_all_project_costs, print_full_project_costs
+from economic_analysis import run_economic_analysis
 
 
 def main():
@@ -568,6 +569,16 @@ def print_cost_analysis(eggs, cable_forces, guy_system):
     )
     
     print_full_project_costs(full_costs, tower_height)
+    
+    # === ECONOMIC ANALYSIS ===
+    run_economic_analysis(
+        tower_height=tower_height,
+        n_eggs=n_eggs,
+        construction_cost=full_costs['grand_total_with_contingency'],
+        elevator_system_cost=elevator_cost,
+        stabilization_system_cost=stab_cost,
+        save_chart=True
+    )
 
 
 if __name__ == '__main__':
