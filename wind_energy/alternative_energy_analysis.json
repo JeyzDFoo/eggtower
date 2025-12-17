@@ -1,0 +1,25 @@
+{
+  "note": "Auto-generated alternative energy analysis",
+  "vortex_shedding": {
+    "system_type": "Vortex Shedding Energy Capture",
+    "n_harvesters": 28,
+    "total_power_kW": 1.9708433375085634,
+    "annual_energy_MWh": 5.179376290972504,
+    "capex_usd": 420000,
+    "payback_years": 1621.816899969393
+  },
+  "updraft_column": {
+    "feasible": true,
+    "system_type": "Vertical Updraft Column with Dual-Port Valved Accelerators",
+    "column_height": 1600.008309247666,
+    "v_baseline": 24.304280148774687,
+    "v_with_valves": 52.002499008666895,
+    "velocity_boost_pct": 113.96436631878038,
+    "total_power_kW": 331.65176665515776,
+    "annual_energy_MWh": 1016.8443165647136,
+    "turbine_capex_usd": 2850000,
+    "valve_capex_usd": 1310000,
+    "total_capex_usd": 5099421.187500734,
+    "payback_years": 100.29895637767865
+  }
+}

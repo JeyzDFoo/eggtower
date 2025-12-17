@@ -1,8 +1,15 @@
 """
 Wind Energy Module for Egg Tower.
 
-This module contains wind turbine integration analysis for the egg tower,
-using the hollow egg shells as wind concentrators (internal duct turbines).
+This module contains wind energy analysis for the egg tower:
+
+1. Internal Duct Turbines (wind_turbine.py)
+   - Uses hollow egg shells as wind concentrators
+   - Horizontal turbines in throat of each egg
+   
+2. Alternative Energy Concepts (alternative_energy.py)
+   - Vortex Shedding: Piezoelectric harvesters at junctions
+   - Vertical Updraft Column: Solar/wind chimney with horizontal turbines
 """
 
 from .wind_turbine import (
@@ -52,4 +59,21 @@ __all__ = [
     'InternalDuctTurbine',
     'TURBINE_MODELS',
     'INTERNAL_TURBINE_MODELS',
+]
+
+# Alternative energy (import separately to avoid circular imports)
+from .alternative_energy import (
+    analyze_alternative_energy,
+    print_alternative_energy_analysis,
+    analyze_vortex_energy_harvesting,
+    analyze_updraft_column,
+    save_alternative_energy_analysis,
+)
+
+__all__ += [
+    'analyze_alternative_energy',
+    'print_alternative_energy_analysis',
+    'analyze_vortex_energy_harvesting',
+    'analyze_updraft_column',
+    'save_alternative_energy_analysis',
 ]
