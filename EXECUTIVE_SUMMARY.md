@@ -142,6 +142,23 @@ The structural concept leverages several established engineering principles:
 
 ---
 
+### Wind Turbine Integration (Experimental)
+
+The egg junction geometry creates natural constrictions that can accelerate wind flow. The [wind_turbine.py](wind_turbine.py) module evaluates:
+
+1. **Venturi Effect Power Boost**: Junction geometry provides modest (~1.3-1.8x) wind speed amplification
+2. **Distributed Generation**: Multiple turbine rings at egg junctions (1-2 MW total potential)
+3. **Gyroscopic Stabilization**: Spinning turbine rotors create stabilizing torque against tower sway
+
+**Key Findings:**
+- ~18 turbines across 5 junction rings (for 100m base diameter tower)
+- ~4,700 MWh/year energy production (at 30% capacity factor)
+- Negligible mass impact (~50 tonnes, <0.1% of tower mass)
+- Supplementary gyroscopic damping (not primary stabilization)
+- Economics: Marginal at current wholesale prices (~38 year payback)
+
+---
+
 ### Limitations & Future Work
 
 - **Seismic Analysis**: Not currently included
@@ -149,6 +166,7 @@ The structural concept leverages several established engineering principles:
 - **Detailed Connections**: Joint design not specified
 - **Fatigue Analysis**: Long-term cyclic loading not assessed
 - **Multi-physics Coupling**: Thermal and acoustic effects not modeled
+- **Wind Turbine CFD**: Flow modeling needed to validate venturi effect
 
 ---
 
@@ -157,6 +175,9 @@ The structural concept leverages several established engineering principles:
 ```bash
 # From the project directory
 python main.py
+
+# Wind turbine integration analysis
+python wind_turbine.py
 ```
 
 This executes the full optimization pipeline and generates all outputs including diagrams and cost analysis.
