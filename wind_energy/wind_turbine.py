@@ -39,8 +39,8 @@ from typing import List, Dict, Optional, Tuple
 from config import RHO_AIR, V_REF
 
 
-# Path to optimized tower configuration
-OPTIMIZED_TOWER_PATH = os.path.join(os.path.dirname(__file__), 'optimized_tower.json')
+# Path to optimized tower configuration (in parent directory)
+OPTIMIZED_TOWER_PATH = os.path.join(os.path.dirname(__file__), '..', 'optimized_tower.json')
 
 
 def load_optimized_tower() -> dict:
@@ -1389,3 +1389,113 @@ if __name__ == "__main__":
     # Detailed turbine analysis
     analysis = analyze_tower_turbine_integration(analyzed_eggs, turbine_type='small')
     print_turbine_analysis(analysis, detailed=True)
+
+
+# =============================================================================
+# DATA EXPORT FUNCTIONS
+# =============================================================================
+
+# Path to output data file
+WIND_ENERGY_DATA_PATH = os.path.join(os.path.dirname(__file__), 'wind_energy_analysis.json')
+
+
+def save_wind_energy_analysis(feasibility: dict = None) -> str:
+    """
+    Save wind energy analysis results to JSON file.
+    
+    If feasibility is not provided, runs a fresh analysis using the
+    optimized tower configuration.
+    
+    Returns:
+        Path to the saved JSON file.
+    """
+    if feasibility is None:
+        eggs = get_optimized_eggs()
+        feasibility = assess_feasibility(eggs)
+    
+    # Extract the detailed installation data for export
+    installations = feasibility['detailed_analysis'].get('installations', [])
+    
+    # Build export data structure
+    export_data = {
+        'note': 'Auto-generated wind energy analysis - do not edit manually',
+        'system_type': feasibility['system_type'],
+        
+        # Summary metrics
+        'summary': {
+            'n_turbines': feasibility['geometric_feasibility']['total_turbines'],
+            'rated_power_kW': feasibility['energy_production']['rated_power_MW'] * 1000,
+            'rated_power_MW': feasibility['energy_production']['rated_power_MW'],
+            'annual_energy_MWh': feasibility['energy_production']['annual_energy_MWh'],
+            'added_mass_tonnes': feasibility['structural_impact']['added_mass_tonnes'],
+            'estimated_capex_usd': feasibility['economics']['estimated_capex_usd'],
+            'annual_revenue_usd': feasibility['economics']['annual_revenue_usd'],
+            'simple_payback_years': feasibility['economics']['simple_payback_years'],
+        },
+        
+        # Assessments
+        'assessments': {
+            'geometric': feasibility['geometric_feasibility']['assessment'],
+            'structural': feasibility['structural_impact']['assessment'],
+            'energy': feasibility['energy_production']['assessment'],
+            'economic': feasibility['economics']['assessment'],
+        },
+        
+        'recommendation': feasibility['overall_recommendation'],
+        
+        # Per-turbine installation details
+        'installations': [
+            {
+                'egg_index': inst['egg_index'],
+                'egg_diameter_m': inst['egg_d'],
+                'egg_height_m': inst['egg_h'],
+                'z_center_m': inst['z_center'],
+                'turbine_model': inst['turbine_model'],
+                'turbine_diameter_m': inst['turbine_diameter'],
+                'throat_diameter_m': inst['d_throat'],
+                'v_ambient_ms': inst['v_ambient'],
+                'v_amplification': inst['v_amplification'],
+                'v_throat_ms': inst['v_throat'],
+                'power_kW': inst['power_kW'],
+                'power_status': inst['power_status'],
+                'mass_kg': inst['mass_kg'],
+            }
+            for inst in installations
+        ],
+        
+        # Capacity factors and assumptions
+        'assumptions': {
+            'capacity_factor': feasibility['detailed_analysis'].get('capacity_factor', 0.35),
+            'inlet_fraction': 0.25,
+            'duct_efficiency': 0.70,
+            'electricity_price_per_MWh': 50,
+            'capex_per_kW': 2000,
+            'shell_modification_per_egg': 50000,
+        },
+    }
+    
+    with open(WIND_ENERGY_DATA_PATH, 'w') as f:
+        json.dump(export_data, f, indent=2)
+    
+    print(f"💾 Saved wind energy analysis to: {WIND_ENERGY_DATA_PATH}")
+    return WIND_ENERGY_DATA_PATH
+
+
+def load_wind_energy_analysis() -> dict:
+    """
+    Load previously saved wind energy analysis from JSON file.
+    
+    Returns:
+        Dictionary with wind energy analysis data.
+    
+    Raises:
+        FileNotFoundError: If wind_energy_analysis.json doesn't exist.
+    """
+    if not os.path.exists(WIND_ENERGY_DATA_PATH):
+        raise FileNotFoundError(
+            f"Wind energy analysis file not found: {WIND_ENERGY_DATA_PATH}\n"
+            f"Run save_wind_energy_analysis() first to generate it."
+        )
+    
+    with open(WIND_ENERGY_DATA_PATH, 'r') as f:
+        return json.load(f)

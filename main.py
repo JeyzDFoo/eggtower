@@ -6,14 +6,14 @@ A 1600m tall tower made of stacked hollow egg-shaped shells (BFRP).
 Each egg is connected to adjacent eggs via guy cables at their maximum diameter points.
 
 Modules:
-    config.py       - Configuration constants and material properties
-    geometry.py     - Egg geometry and tower building functions
-    structural.py   - Stress and buckling analysis
-    wind_cables.py  - Wind loading and cable force calculations
-    output.py       - Printing and output functions
+    config.py        - Configuration constants and material properties
+    geometry.py      - Egg geometry and tower building functions
+    structural.py    - Stress and buckling analysis
+    wind_cables.py   - Wind loading and cable force calculations
+    output.py        - Printing and output functions
     visualization.py - Tower diagram plotting
-    optimization.py - Diameter optimization algorithms
-    wind_turbine.py - Wind turbine integration analysis
+    optimization.py  - Diameter optimization algorithms
+    wind_energy/     - Wind turbine integration analysis
 """
 
 import json
@@ -32,7 +32,7 @@ from active_stabilization import design_active_stabilization
 from elevator_system import design_elevator_system
 from project_costs import calculate_all_project_costs, print_full_project_costs
 from economic_analysis import run_economic_analysis
-from wind_turbine import assess_feasibility, print_feasibility_report, analyze_tower_turbine_integration, print_turbine_analysis
+from wind_energy import assess_feasibility, print_feasibility_report, analyze_tower_turbine_integration, print_turbine_analysis
 
 
 # Path to optimized tower configuration file
