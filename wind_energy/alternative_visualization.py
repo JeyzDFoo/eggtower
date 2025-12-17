@@ -138,8 +138,8 @@ def draw_updraft_column_physics():
                        arrowprops=dict(arrowstyle='->', color='#FF4444',
                                       lw=2.5, mutation_scale=15))
     
-    # Central updraft label (inlet velocity, decreases with height due to friction)
-    ax.text(0, 8, 'UPDRAFT\n52→21 m/s', fontsize=11, ha='center', va='center',
+    # Central updraft label (uniform velocity - chimney physics)
+    ax.text(0, 8, 'UPDRAFT\n33 m/s\n(uniform)', fontsize=11, ha='center', va='center',
             color='#CC0000', fontweight='bold',
             bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
     
@@ -159,7 +159,7 @@ def draw_updraft_column_physics():
     ax.add_patch(solar_zone)
     ax.text(0, 0.3, 'Solar Heating', fontsize=9, ha='center',
             color='#CC8800', fontweight='bold')
-    ax.text(0, -0.3, 'Inlet: 52 m/s', fontsize=10, ha='center', 
+    ax.text(0, -0.3, 'ΔP = 5221 Pa', fontsize=10, ha='center', 
             color='#FF6600', fontweight='bold')
     
     # === WIND FLOW (external) - varying with height ===
@@ -248,8 +248,8 @@ def draw_updraft_column_physics():
     valve_labels = [
         '29 suction @ waist (leeward)',
         '28 injection @ throat (windward)',
-        'Total ΔP = 3733 Pa',
-        'v_inlet: 52 m/s (+114%)',
+        'Valve ΔP = 3733 Pa',
+        'v_eq: 33.3 m/s (+37%)',
     ]
     y_label = 11.3
     for label in valve_labels:
@@ -262,20 +262,20 @@ def draw_updraft_column_physics():
     ax.add_patch(eq_box)
     
     equations = [
-        ('ENERGY CONSERVATION:', None, True),
+        ('CHIMNEY PHYSICS:', None, True),
         ('', None, False),
-        ('Inlet KE:', '#CC8800', True),
-        ('2428 kW @ 52 m/s', '#CC8800', False),
+        ('Driving ΔP:', '#CC8800', True),
+        ('5221 Pa total', '#CC8800', False),
         ('', None, False),
-        ('Friction losses:', '#0066FF', True),
-        ('1692 kW (68%)', '#0066FF', False),
+        ('Equilibrium:', '#0066FF', True),
+        ('ΔP = K×½ρv²', '#0066FF', False),
+        ('v = 33 m/s', '#0066FF', False),
         ('', None, False),
-        ('Turbine extract:', '#006600', True),
-        ('332 kW (13.4%)', '#006600', False),
-        ('', None, False),
-        ('', None, False),
-        ('Outlet:', '#CC0000', True),
-        ('21 m/s', '#CC0000', False),
+        ('Power budget:', '#006600', True),
+        ('2158 kW available', '#006600', False),
+        ('1360 kW friction', '#006600', False),
+        ('359 kW extracted', '#006600', False),
+        ('16.6% efficiency', '#CC0000', False),
     ]
     
     y_eq = 16
@@ -296,12 +296,12 @@ def draw_updraft_column_physics():
     specs = [
         'SYSTEM OUTPUT',
         '─────────────',
-        '19 x 2m turbines',
-        '332 kW total',
-        '1017 MWh/year',
+        '28 x 2m turbines',
+        '359 kW total',
+        '1102 MWh/year',
         '',
-        'CAPEX: $5.1M',
-        'Payback: 100 yr',
+        'CAPEX: $6.4M',
+        'Payback: 117 yr',
     ]
     y_spec = 8
     for i, text in enumerate(specs):
@@ -454,11 +454,11 @@ def draw_combined_energy_diagram():
     # Valve acceleration note
     ax2.text(2.3, 3, '29 dual\nvalves', fontsize=7, ha='left', color='#006600')
     
-    ax2.text(0, -0.5, 'Tapered duct, inlet 52 m/s\nfriction reduces to 21 m/s',
+    ax2.text(0, -0.5, 'Chimney physics: uniform\n33 m/s throughout',
              ha='center', fontsize=9, style='italic')
-    ax2.text(0, 0.3, '332 kW | 1017 MWh/yr', ha='center', fontsize=10,
+    ax2.text(0, 0.3, '359 kW | 1102 MWh/yr', ha='center', fontsize=10,
              fontweight='bold', color='#0066CC')
-    ax2.text(0, -0.1, 'CAPEX $5.1M | 100 yr', ha='center', fontsize=8, color='#666')
+    ax2.text(0, -0.1, 'CAPEX $6.4M | 117 yr', ha='center', fontsize=8, color='#666')
     
     # === 3. VORTEX SHEDDING ===
     ax3 = axes[2]

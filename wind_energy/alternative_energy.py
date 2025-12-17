@@ -804,61 +804,67 @@ def calculate_valved_accelerator_boost(
 
 def design_updraft_turbine_system(
     column: dict,
-    updraft_speed: float,
+    driving_pressure_Pa: float,
+    valve_contribution_Pa: float = 0,
     n_turbines: int = None,
     high_speed: bool = False
 ) -> dict:
     """
-    Design a system of horizontal turbines in the vertical column.
+    Design turbine system using CHIMNEY PHYSICS (suction-driven flow).
     
-    Turbines are placed at throat (junction between eggs) where the
-    column narrows, creating higher velocity via venturi effect.
+    CRITICAL: This is a chimney, not a fan! 
+    - Flow is PULLED by distributed pressure differential (buoyancy + wind + valves)
+    - Velocity develops naturally from force balance
+    - At equilibrium: ΔP_driving = ΔP_friction + ΔP_turbines
     
-    ENERGY ACCOUNTING:
-    - Available pressure head (driving force) = thermal + wind + valves
-    - Losses: friction, venturi contraction/expansion, turbine drag
-    - Turbine extraction reduces pressure head available for flow
-    - System reaches equilibrium where: driving ΔP = losses + extraction
+    The driving pressure is distributed along the full height. Friction opposes it.
+    Turbines extract energy by creating additional pressure drop.
+    
+    Physics:
+        ΔP_driving = ΔP_thermal + ΔP_wind + ΔP_valves  (total available)
+        ΔP_friction = f × (L/D_avg) × ½ρv²             (friction loss)
+        ΔP_turbine = ½ρv² × Cp × n_turbines            (extraction)
+        
+        At steady state: ΔP_driving = ΔP_friction + ΔP_turbine
+        Solve for equilibrium velocity v
     
     Parameters:
         column: Column geometry
-        updraft_speed: Expected updraft velocity at WAIST (m/s) - before turbine losses
+        driving_pressure_Pa: Total driving pressure (thermal + wind + valves)
+        valve_contribution_Pa: Portion from valves (for reporting)
         n_turbines: Override number of turbines (optional)
-        high_speed: If True, select high-speed turbines for valved accelerator systems
+        high_speed: If True, select high-speed turbines
     """
-    # Select turbine size based on THROAT diameter (where turbines are located)
+    # === GEOMETRY SETUP ===
     d_throat_avg = (column['segments'][0]['d_column_throat'] + 
                    column['segments'][-1]['d_column_throat']) / 2 if 'd_column_throat' in column['segments'][0] else \
                    (column['base_column_diameter'] + column['top_column_diameter']) / 2 * 0.58
     
-    # For tapered duct, use the average duct diameter for turbine sizing
     is_tapered = column.get('tapered_duct', False)
     if is_tapered:
         d_duct_base = column.get('duct_diameter_base', d_throat_avg)
         d_duct_top = column.get('duct_diameter_top', d_throat_avg)
         d_duct_avg = (d_duct_base + d_duct_top) / 2
-        target_d = d_duct_avg * 0.70  # 70% of duct for turbine (leave margin)
+        target_d = d_duct_avg * 0.70
     else:
-        target_d = d_throat_avg * 0.8  # 80% of throat for natural geometry
+        d_duct_base = d_throat_avg
+        d_duct_top = d_throat_avg
+        d_duct_avg = d_throat_avg
+        target_d = d_throat_avg * 0.8
     
-    # For high-speed flows, use aerospace-style turbines
-    # Auto-detect: if updraft > 30 m/s, use aerospace turbines
-    use_aerospace = high_speed or updraft_speed > 30
-    
+    # Select turbine
+    use_aerospace = high_speed
     best_turbine = None
     for key, turbine in UPDRAFT_TURBINES.items():
-        # Filter by speed requirement
         is_aerospace = 'aerospace' in key
         if use_aerospace and not is_aerospace:
-            continue  # Skip standard turbines for high-speed application
+            continue
         if not use_aerospace and is_aerospace:
-            continue  # Skip aerospace turbines for low-speed application
-            
+            continue
         if turbine.rotor_diameter <= target_d:
             if best_turbine is None or turbine.rotor_diameter > best_turbine.rotor_diameter:
                 best_turbine = turbine
     
-    # Fallback: if no aerospace turbine fits, use largest standard
     if best_turbine is None and use_aerospace:
         for key, turbine in UPDRAFT_TURBINES.items():
             if turbine.rotor_diameter <= target_d:
@@ -868,271 +874,219 @@ def design_updraft_turbine_system(
     if best_turbine is None:
         return {
             'feasible': False,
-            'reason': f"Duct diameter {d_duct_avg if is_tapered else d_throat_avg:.1f}m too small for turbines"
+            'reason': f"Duct diameter {d_duct_avg:.1f}m too small for turbines"
         }
     
-    # === MULTI-STAGE ENERGY EXTRACTION WITH TAPERED DUCT ===
-    # 
-    # Key insight: If flow is too fast, we extract more energy to slow it down.
-    # The tapered duct follows the structural geometry (eggs get smaller at top).
-    # Mass flow is conserved: ṁ = ρ × A × v
-    # 
-    # At each turbine stage:
-    #   1. Calculate local velocity from mass flow / area
-    #   2. Extract energy (reduces total energy in flow)
-    #   3. Flow continues to next stage at reduced energy
+    # === CHIMNEY EQUILIBRIUM PHYSICS ===
     #
-    # This is like a multi-stage turbine cascade in a power plant.
+    # This is a SUCTION system, not a blower!
+    # 
+    # Driving forces (distributed along column height):
+    #   - Thermal buoyancy: warm air is less dense → rises
+    #   - Wind pressure: higher at top outlet, lower at base inlet
+    #   - Valve injection: adds momentum at each stage
+    #
+    # Opposing forces:
+    #   - Friction: ΔP_f = f × (L/D) × ½ρv²
+    #   - Turbine extraction: ΔP_t = Cp × ½ρv² × n_turbines
+    #
+    # At steady state: ΔP_driving = ΔP_friction + ΔP_turbine
+    #
+    # Rearranging: v² = 2 × ΔP_driving / (ρ × (K_friction + K_turbine))
     
-    # Get turbine stage locations from column geometry
+    # Get stage info
     turbine_stages = column.get('turbine_stages', [])
     n_stages = len(turbine_stages) if turbine_stages else column['n_segments'] - 1
     
-    # Duct properties at each stage
+    # Duct geometry
     if is_tapered:
-        # Linear interpolation of duct diameter from base to top
-        duct_diameters = np.linspace(d_duct_base, d_duct_top, n_stages)
+        duct_diameters = np.linspace(d_duct_base, d_duct_top, max(n_stages, 1))
         duct_areas = np.pi * (duct_diameters / 2)**2
     else:
-        # Natural geometry: varies with egg shape
         A_throat_base = column['segments'][0]['A_column_throat']
         A_throat_top = column['segments'][-1]['A_column_throat']
-        duct_areas = np.linspace(A_throat_base, A_throat_top, n_stages)
+        duct_areas = np.linspace(A_throat_base, A_throat_top, max(n_stages, 1))
         duct_diameters = np.sqrt(4 * duct_areas / np.pi)
     
-    # Rotor area
+    A_avg = np.mean(duct_areas)
+    D_avg = np.sqrt(4 * A_avg / np.pi)
     A_rotor = np.pi * (best_turbine.rotor_diameter / 2)**2
     
     # === LOSS COEFFICIENTS ===
-    # For tapered duct: friction only, no venturi (smooth taper)
-    # For natural geometry: friction + venturi at each junction
-    
-    avg_D_hydraulic = np.sqrt(4 * np.mean(duct_areas) / np.pi)
+    L = column['total_height']
     f_friction = 0.012 if is_tapered else 0.015
-    K_friction = f_friction * column['total_height'] / avg_D_hydraulic
     
+    # Friction coefficient: K_f = f × L/D
+    K_friction = f_friction * L / D_avg
+    
+    # Venturi losses (only for natural geometry)
     if is_tapered:
-        K_venturi_total = 0.0  # Smooth taper = no sudden expansion/contraction
+        K_venturi = 0.0
     else:
-        K_venturi_per_stage = 0.08  # Contraction + expansion loss
-        K_venturi_total = K_venturi_per_stage * n_stages
+        K_venturi = 0.08 * n_stages
     
-    # Turbine drag
-    blockage_ratio = A_rotor / np.mean(duct_areas)
-    K_turbine_drag = 0.05 * blockage_ratio
+    # Turbine pressure coefficient (per turbine)
+    # Betz limit: max Cp = 16/27 ≈ 0.593
+    # Turbine creates ΔP = Cp × ½ρv² across rotor
+    Cp_turbine = 0.4  # Conservative: accounts for sub-optimal operation
     
-    # Total loss coefficient (for reference)
-    K_total = K_friction + K_venturi_total + K_turbine_drag * n_stages
+    # Total turbine coefficient (function of how many we install)
+    # More turbines = more extraction = more resistance = lower velocity
     
-    # === MULTI-STAGE CONTROL VOLUME WITH ENERGY CONSERVATION ===
-    # 
-    # Physics for each egg (control volume):
-    #   Mass:   ṁ_out = ṁ_in + ṁ_inject
-    #   Energy: E_out = E_in + E_inject - E_friction - E_turbine
-    #   
-    # Where:
-    #   E = ½ṁv² (kinetic energy flux, Watts)
-    #   E_friction = f(L/D) × ½ρAv³ (converted to heat)
-    #   
-    # After energy balance, solve for exit velocity:
-    #   v_out = √(2 × E_out / ṁ_out)
-    #
-    # This properly accounts for friction slowing the flow!
+    # === SOLVE FOR EQUILIBRIUM WITH DIFFERENT TURBINE COUNTS ===
+    # Trade-off: More turbines extract more, but slow the flow
     
-    # Port parameters
-    Cd_port = 0.7
-    Cp_injection = 0.9
-    A_port_ratio = 0.05
-    
-    # Friction factor
-    f_friction = 0.012  # Darcy friction factor for smooth duct
-    
-    # Get segment heights
-    segment_heights = [column['segments'][i]['z_top'] for i in range(min(n_stages, len(column['segments'])))]
-    
-    # Initial conditions at base
-    A_inlet = duct_areas[0]
-    v_inlet = updraft_speed
-    mass_flow = RHO_AIR * A_inlet * v_inlet
-    E_kinetic = 0.5 * mass_flow * v_inlet**2  # Watts
-    
-    # Operating limits
-    v_target = column.get('v_target', 40.0)
-    v_max_turbine = 80.0
-    
-    # Track each control volume
-    stage_data = []
-    total_power_W = 0
-    total_friction_W = 0
-    total_inject_W = 0
     BETZ_LIMIT = 0.593
+    best_config = None
+    best_power = 0
     
-    v_current = v_inlet
+    # Try different numbers of turbines
+    for n_turb in range(1, n_stages + 1):
+        # Total extraction coefficient
+        K_turbine = Cp_turbine * n_turb * (A_rotor / A_avg)
+        
+        # Total resistance
+        K_total = K_friction + K_venturi + K_turbine
+        
+        # Equilibrium velocity: ΔP_driving = K_total × ½ρv²
+        # v = sqrt(2 × ΔP_driving / (ρ × K_total))
+        v_eq = np.sqrt(2 * driving_pressure_Pa / (RHO_AIR * K_total))
+        
+        # Check if velocity is in turbine operating range
+        if v_eq < best_turbine.cut_in_speed:
+            continue  # Too slow
+        # No cut-out limit for aerospace-style turbines in ducted flow
+        
+        # Power extracted by turbines
+        # P = n × ½ρ × A_rotor × v³ × Cp_actual × η
+        Cp_actual = min(BETZ_LIMIT, Cp_turbine)
+        P_per_turbine = 0.5 * RHO_AIR * A_rotor * v_eq**3 * Cp_actual * best_turbine.efficiency
+        P_per_turbine = min(P_per_turbine, best_turbine.rated_power_kW * 1000)
+        
+        P_total = P_per_turbine * n_turb
+        
+        if P_total > best_power:
+            best_power = P_total
+            best_config = {
+                'n_turbines': n_turb,
+                'v_equilibrium': v_eq,
+                'K_friction': K_friction,
+                'K_turbine': K_turbine,
+                'K_total': K_total,
+                'P_per_turbine_W': P_per_turbine,
+                'P_total_W': P_total,
+            }
     
+    if best_config is None:
+        # No valid configuration found, use single turbine estimate
+        K_total = K_friction + K_venturi + Cp_turbine * (A_rotor / A_avg)
+        v_eq = np.sqrt(2 * driving_pressure_Pa / (RHO_AIR * K_total))
+        best_config = {
+            'n_turbines': 1,
+            'v_equilibrium': v_eq,
+            'K_friction': K_friction,
+            'K_turbine': Cp_turbine * (A_rotor / A_avg),
+            'K_total': K_total,
+            'P_per_turbine_W': 0,
+            'P_total_W': 0,
+        }
+    
+    v_eq = best_config['v_equilibrium']
+    n_active = best_config['n_turbines']
+    
+    # === ENERGY BUDGET ===
+    # Power available from driving pressure: P_avail = ΔP × Q = ΔP × A × v
+    Q_flow = A_avg * v_eq  # m³/s
+    P_available = driving_pressure_Pa * Q_flow  # Watts
+    
+    # Power lost to friction: P_friction = K_friction × ½ρv² × Q
+    ΔP_friction = K_friction * 0.5 * RHO_AIR * v_eq**2
+    P_friction = ΔP_friction * Q_flow
+    
+    # Power extracted by turbines
+    P_extracted = best_config['P_total_W']
+    
+    # Efficiency
+    system_efficiency = P_extracted / P_available if P_available > 0 else 0
+    friction_fraction = P_friction / P_available if P_available > 0 else 0
+    
+    # Mass flow
+    mass_flow = RHO_AIR * Q_flow
+    
+    # Create stage data for compatibility with output
+    segment_heights = [column['segments'][i]['z_top'] for i in range(min(n_stages, len(column['segments'])))]
+    stage_data = []
     for i in range(n_stages):
-        # === CONTROL VOLUME FOR EGG i ===
-        
-        # Local geometry
-        A_local = duct_areas[i]
-        d_local = duct_diameters[i]
         z_stage = segment_heights[i] if i < len(segment_heights) else 100 + i * 55
-        
-        # Stage length
-        if i < len(column['segments']):
-            L_stage = column['segments'][i]['height']
-        else:
-            L_stage = column['total_height'] / n_stages
-        
-        # Wind speed at this height
-        v_wind = wind_speed_at_height(z_stage, v_ref=10, z_ref=10)
-        
-        # === ENERGY IN ===
-        mass_flow_in = mass_flow
-        E_in = 0.5 * mass_flow_in * v_current**2
-        
-        # === INJECTION (adds mass AND energy) ===
-        delta_P_inject = 0.5 * RHO_AIR * v_wind**2 * Cp_injection
-        A_port = A_local * A_port_ratio
-        v_inject = np.sqrt(2 * delta_P_inject / RHO_AIR) if delta_P_inject > 0 else 0
-        m_dot_inject = Cd_port * A_port * RHO_AIR * v_inject
-        E_inject = 0.5 * m_dot_inject * v_inject**2
-        
-        # === MASS OUT ===
-        mass_flow_out = mass_flow_in + m_dot_inject
-        
-        # === FRICTION LOSS (converts KE to heat) ===
-        # Use current velocity for friction calculation
-        E_friction = f_friction * (L_stage / d_local) * 0.5 * RHO_AIR * A_local * v_current**3
-        
-        # === TURBINE EXTRACTION ===
-        can_fit = best_turbine.rotor_diameter <= d_local * 0.70
-        v_ok = best_turbine.cut_in_speed <= v_current <= v_max_turbine
-        
-        if can_fit and v_ok:
-            P_available = 0.5 * RHO_AIR * A_rotor * v_current**3
-            E_turbine = min(
-                P_available * BETZ_LIMIT * best_turbine.efficiency,
-                best_turbine.rated_power_kW * 1000
-            )
-        else:
-            P_available = 0
-            E_turbine = 0
-        
-        # === ENERGY BALANCE ===
-        # E_out = E_in + E_inject - E_friction - E_turbine
-        E_out = E_in + E_inject - E_friction - E_turbine
-        E_out = max(E_out, 0)  # Can't go negative
-        
-        # === EXIT VELOCITY (from energy conservation) ===
-        if E_out > 0 and mass_flow_out > 0:
-            v_out = np.sqrt(2 * E_out / mass_flow_out)
-        else:
-            v_out = 0
-        
+        is_active = i < n_active
         stage_data.append({
             'stage': i,
             'z_height': z_stage,
-            'd_duct': d_local,
-            'v_wind': v_wind,
-            'm_dot_in': mass_flow_in,
-            'm_dot_inject': m_dot_inject,
-            'm_dot_out': mass_flow_out,
-            'v_in': v_current,
-            'v_out': v_out,
-            'E_in_kW': E_in / 1000,
-            'E_inject_kW': E_inject / 1000,
-            'E_friction_kW': E_friction / 1000,
-            'E_out_kW': E_out / 1000,
-            'can_extract': can_fit and v_ok,
-            'P_available_kW': P_available / 1000,
-            'P_extracted_kW': E_turbine / 1000,
+            'd_duct': duct_diameters[i] if i < len(duct_diameters) else D_avg,
+            'v_in': v_eq,
+            'v_out': v_eq,  # Uniform velocity (chimney physics)
+            'm_dot_in': mass_flow,
+            'm_dot_inject': 0,
+            'm_dot_out': mass_flow,
+            'E_in_kW': P_available / 1000 / n_stages,
+            'E_friction_kW': P_friction / 1000 / n_stages,
+            'E_out_kW': (P_available - P_friction - P_extracted) / 1000 / n_stages,
+            'can_extract': is_active,
+            'P_available_kW': best_config['P_per_turbine_W'] / 1000 if is_active else 0,
+            'P_extracted_kW': best_config['P_per_turbine_W'] / 1000 if is_active else 0,
         })
-        
-        total_power_W += E_turbine
-        total_friction_W += E_friction
-        total_inject_W += E_inject
-        
-        # Update for next stage
-        mass_flow = mass_flow_out
-        v_current = v_out
-        
-        if v_current < 5.0:  # Flow essentially stopped
-            break
     
-    n_active_stages = sum(1 for s in stage_data if s.get('P_extracted_kW', 0) > 0)
-    total_power_kW = total_power_W / 1000
-    avg_power_kW = total_power_kW / n_active_stages if n_active_stages > 0 else 0
-    
-    # Total friction losses (from per-stage data)
-    total_friction_kW = sum(s.get('E_friction_kW', 0) for s in stage_data)
-    
-    # Total injection energy added
-    total_inject_kW = sum(s.get('E_inject_kW', 0) for s in stage_data)
-    
-    # Total available power at inlet
-    P_inlet_kW = 0.5 * RHO_AIR * A_inlet * v_inlet**3 / 1000
-    
-    # System efficiency (based on inlet + injection energy)
-    P_total_input = P_inlet_kW + total_inject_kW
-    system_efficiency = total_power_kW / P_total_input if P_total_input > 0 else 0
-    
-    total_mass = (best_turbine.rotor_mass_kg + best_turbine.generator_mass_kg) * n_active_stages
-    
-    # Cost estimate - aerospace turbines cost more
-    is_aerospace = 'Aerospace' in best_turbine.name or 'aerospace' in best_turbine.name.lower()
+    # Cost estimate
+    is_aerospace = 'Aerospace' in best_turbine.name
     cost_per_turbine = 150_000 if is_aerospace else 50_000
-    total_cost = cost_per_turbine * n_active_stages
+    total_cost = cost_per_turbine * n_active
+    total_mass = (best_turbine.rotor_mass_kg + best_turbine.generator_mass_kg) * n_active
     
-    # Velocities and mass flows at key points
-    v_outlet = stage_data[-1].get('v_out', 0) if stage_data else v_inlet
-    m_dot_inlet = stage_data[0].get('m_dot_in', 0) if stage_data else 0
-    m_dot_outlet = stage_data[-1].get('m_dot_out', 0) if stage_data else 0
-    total_injected = sum(s.get('m_dot_inject', 0) for s in stage_data)
+    # Total power
+    total_power_kW = P_extracted / 1000
+    avg_power_kW = total_power_kW / n_active if n_active > 0 else 0
     
     return {
         'feasible': True,
         'turbine_model': best_turbine.name,
         'turbine_diameter': best_turbine.rotor_diameter,
         'tapered_duct': is_tapered,
-        'duct_diameter_base': d_duct_base if is_tapered else d_throat_avg,
-        'duct_diameter_top': d_duct_top if is_tapered else d_throat_avg,
+        'duct_diameter_base': d_duct_base,
+        'duct_diameter_top': d_duct_top,
         'taper_ratio': column.get('taper_ratio', 1.0),
         'n_stages': n_stages,
-        'n_active_stages': n_active_stages,
-        'n_turbines': n_active_stages,  # For compatibility
+        'n_active_stages': n_active,
+        'n_turbines': n_active,
         'stage_data': stage_data,
-        # Velocities
-        'v_inlet': v_inlet,
-        'v_outlet': v_outlet,
-        'v_target': v_target,
-        # Mass flows
-        'm_dot_inlet': m_dot_inlet,
-        'm_dot_outlet': m_dot_outlet,
-        'm_dot_injected_total': total_injected,
-        'mass_flow_increase_pct': (m_dot_outlet / m_dot_inlet - 1) * 100 if m_dot_inlet > 0 else 0,
+        # Chimney equilibrium values
+        'v_equilibrium': v_eq,
+        'v_inlet': v_eq,
+        'v_outlet': v_eq,
+        'K_friction': best_config['K_friction'],
+        'K_turbine': best_config['K_turbine'],
+        'K_total': best_config['K_total'],
+        # Mass flow
+        'm_dot_inlet': mass_flow,
+        'm_dot_outlet': mass_flow,
+        'mass_flow_kg_s': mass_flow,
         # Legacy compatibility
-        'updraft_speed': v_inlet,
+        'updraft_speed': v_eq,
         'throat_velocity_ratio': 1.0,
-        'throat_velocity': v_inlet,
-        'final_velocity': v_outlet,
+        'throat_velocity': v_eq,
+        'final_velocity': v_eq,
         'power_per_turbine_kW': avg_power_kW,
         'total_power_kW': total_power_kW,
         'total_mass_kg': total_mass,
         'total_cost_usd': total_cost,
-        # Energy accounting
-        'P_inlet_kW': P_inlet_kW,
-        'P_inject_kW': total_inject_kW,
-        'P_total_input_kW': P_total_input,
-        'P_available_kW': P_total_input,  # Backward compatibility
+        # Energy accounting (chimney physics)
+        'P_driving_Pa': driving_pressure_Pa,
+        'P_valve_contribution_Pa': valve_contribution_Pa,
+        'P_available_kW': P_available / 1000,
+        'P_friction_kW': P_friction / 1000,
         'P_extracted_kW': total_power_kW,
-        'P_friction_kW': total_friction_kW,
-        'P_losses_kW': total_friction_kW,
-        'P_extractable_kW': P_total_input - total_friction_kW,
+        'P_losses_kW': P_friction / 1000,
+        'friction_fraction': friction_fraction,
         'system_efficiency': system_efficiency,
-        'K_friction': K_friction,
-        'K_venturi': K_venturi_total,
-        'K_turbine_drag': K_turbine_drag,
-        'K_total': K_total,
         'turbine_efficiency': best_turbine.efficiency,
     }
 
@@ -1176,25 +1130,46 @@ def analyze_updraft_column(eggs: List[dict], tapered_duct: bool = True) -> dict:
     valved_single = calculate_valved_accelerator_boost(column, eggs, base_wind_speed=10, dual_port=False)
     valved_dual = calculate_valved_accelerator_boost(column, eggs, base_wind_speed=10, dual_port=True)
     
-    # The valved system adds PRESSURE, not direct velocity
-    # Total ΔP = baseline driving pressure + valve boost pressure
-    K_loss = 2.5
-    P_baseline = 0.5 * RHO_AIR * v_baseline**2 * K_loss
+    # === CHIMNEY PHYSICS: Calculate DRIVING PRESSURE, not velocity ===
+    # 
+    # The velocity develops naturally from the balance:
+    #   ΔP_driving = ΔP_friction + ΔP_turbines
+    #
+    # We calculate total driving pressure from all sources.
     
-    # Single-port velocity (no artificial cap - design turbines for actual speed)
+    # Baseline driving pressure (thermal + wind)
+    # Thermal buoyancy: ΔP = ρ × g × H × ΔT/T
+    # Approximation from thermal analysis
+    P_thermal = thermal.get('driving_pressure_Pa', 
+                           0.5 * RHO_AIR * thermal['v_actual']**2 * 3)  # K ~ 3 for chimney
+    
+    # Wind-driven pressure (outlet - inlet)
+    P_wind = wind_driven.get('driving_pressure_Pa',
+                            0.5 * RHO_AIR * wind_driven['v_updraft']**2 * 2)  # K ~ 2
+    
+    P_baseline = P_thermal + P_wind
+    
+    # Total driving pressures with valves
     P_total_single = P_baseline + valved_single['total_delta_P_Pa']
-    v_with_single = np.sqrt(2 * P_total_single / (RHO_AIR * K_loss))
-    
-    # Dual-port velocity (uses both windward and leeward)
-    K_loss_dual = 2.8  # Slightly higher losses with dual-port flow mixing
     P_total_dual = P_baseline + valved_dual['total_delta_P_Pa']
-    v_with_dual = np.sqrt(2 * P_total_dual / (RHO_AIR * K_loss_dual))
     
     # Design turbine systems for each configuration
-    # Baseline uses standard turbines, valved systems use high-speed turbines
-    turbine_system_baseline = design_updraft_turbine_system(column, v_baseline, high_speed=False)
-    turbine_system_single = design_updraft_turbine_system(column, v_with_single, high_speed=True)
-    turbine_system_dual = design_updraft_turbine_system(column, v_with_dual, high_speed=True)
+    # Pass DRIVING PRESSURE - the function solves for equilibrium velocity
+    turbine_system_baseline = design_updraft_turbine_system(
+        column, driving_pressure_Pa=P_baseline, valve_contribution_Pa=0, high_speed=False
+    )
+    turbine_system_single = design_updraft_turbine_system(
+        column, driving_pressure_Pa=P_total_single, 
+        valve_contribution_Pa=valved_single['total_delta_P_Pa'], high_speed=True
+    )
+    turbine_system_dual = design_updraft_turbine_system(
+        column, driving_pressure_Pa=P_total_dual,
+        valve_contribution_Pa=valved_dual['total_delta_P_Pa'], high_speed=True
+    )
+    
+    # Get equilibrium velocities from the solutions
+    v_with_single = turbine_system_single.get('v_equilibrium', 0) if turbine_system_single['feasible'] else 0
+    v_with_dual = turbine_system_dual.get('v_equilibrium', 0) if turbine_system_dual['feasible'] else 0
     
     # Valve system costs
     valve_cost_single = len(eggs) * 20_000 + 100_000  # 1 valve per egg + control
@@ -1276,8 +1251,12 @@ def analyze_updraft_column(eggs: List[dict], tapered_duct: bool = True) -> dict:
         
         # Primary system (selected configuration)
         'valved_accelerator': valved_boost,
-        'v_with_valves': v_with_valves,
-        'velocity_boost_pct': (v_with_valves / v_baseline - 1) * 100,
+        'v_with_valves': turbine_system.get('v_equilibrium', 0),
+        'velocity_boost_pct': (turbine_system.get('v_equilibrium', 0) / max(v_baseline, 0.1) - 1) * 100,
+        
+        # Driving pressures (chimney physics)
+        'P_baseline_Pa': P_baseline,
+        'P_total_Pa': P_total_dual if preferred_config == 'dual' else P_total_single,
         
         # Comparison
         'baseline_system': turbine_system_baseline,
@@ -1414,57 +1393,36 @@ def print_alternative_energy_analysis(analysis: dict):
         print(f"      TOTAL UPDRAFT: {updraft['v_with_valves']:.1f} m/s (+{updraft['velocity_boost_pct']:.0f}% vs baseline)")
         
         # Show control volume analysis
-        if ts.get('P_available_kW') or ts.get('P_inlet_kW'):
-            print(f"\n   🎯 CONTROL VOLUME ANALYSIS (each egg is a CV):")
+        if ts.get('P_available_kW') or ts.get('P_driving_Pa'):
+            print(f"\n   🎯 CHIMNEY EQUILIBRIUM ANALYSIS:")
             
             if is_tapered:
-                v_in = ts.get('v_inlet', 0)
-                v_out = ts.get('v_outlet', 0)
-                m_in = ts.get('m_dot_inlet', 0)
-                m_out = ts.get('m_dot_outlet', 0)
-                m_increase = ts.get('mass_flow_increase_pct', 0)
+                v_eq = ts.get('v_equilibrium', 0)
+                m_flow = ts.get('mass_flow_kg_s', 0)
                 
-                print(f"      TAPERED DUCT WITH MASS INJECTION:")
-                print(f"         Inlet:  ṁ = {m_in:.0f} kg/s, v = {v_in:.1f} m/s")
-                print(f"         Outlet: ṁ = {m_out:.0f} kg/s, v = {v_out:.1f} m/s")
-                print(f"         Mass flow increase: +{m_increase:.0f}% (from injections)")
+                print(f"      TAPERED DUCT (Suction-Driven Flow):")
+                print(f"         Driving ΔP: {ts.get('P_driving_Pa', 0):.0f} Pa")
+                print(f"         Valve contribution: {ts.get('P_valve_contribution_Pa', 0):.0f} Pa")
+                print(f"         Friction coefficient K_f: {ts.get('K_friction', 0):.1f}")
+                print(f"         Equilibrium velocity: {v_eq:.1f} m/s (uniform throughout)")
+                print(f"         Mass flow: {m_flow:.0f} kg/s")
                 print(f"         Active turbine stages: {ts.get('n_active_stages', 0)}")
                 print(f"         Turbine Ø: {ts['turbine_diameter']:.1f} m")
-                
-                # Show stage samples with energy conservation data
-                stage_data = ts.get('stage_data', [])
-                if stage_data:
-                    print(f"\n      📊 CONTROL VOLUME SAMPLES (Energy Conservation):")
-                    print(f"         {'Stage':<6} {'z(m)':<7} {'v_in':<7} {'v_out':<7} {'E_in':<8} {'E_fric':<8} {'E_out':<8} {'P_ext':<8}")
-                    print(f"         {'─'*70}")
-                    # Show first, middle, and last stages
-                    n = len(stage_data)
-                    indices = [0, n//4, n//2, 3*n//4, n-1] if n > 4 else list(range(n))
-                    for idx in sorted(set(indices)):
-                        if 0 <= idx < len(stage_data):
-                            s = stage_data[idx]
-                            print(f"         {s['stage']:<6} {s.get('z_height',0):<7.0f} "
-                                  f"{s.get('v_in',0):<7.1f} {s.get('v_out',0):<7.1f} "
-                                  f"{s.get('E_in_kW',0):<8.1f} {s.get('E_friction_kW',0):<8.2f} "
-                                  f"{s.get('E_out_kW',0):<8.1f} {s.get('P_extracted_kW',0):<8.1f}")
             else:
                 print(f"      NATURAL GEOMETRY (venturi stages):")
-                print(f"         Waist velocity: {updraft['v_with_valves']:.1f} m/s")
-                print(f"         Throat velocity: {ts.get('throat_velocity', 0):.1f} m/s")
+                print(f"         Equilibrium velocity: {ts.get('v_equilibrium', 0):.1f} m/s")
                 print(f"         Turbine Ø: {ts['turbine_diameter']:.1f} m")
             
-            P_inlet = ts.get('P_inlet_kW', 0)
-            P_inject = ts.get('P_inject_kW', 0)
-            P_total = ts.get('P_total_input_kW', P_inlet + P_inject)
+            P_available = ts.get('P_available_kW', 0)
             P_friction = ts.get('P_friction_kW', 0)
             P_extracted = ts.get('total_power_kW', 0)
-            print(f"\n      ⚡ ENERGY BUDGET:")
-            print(f"         Inlet kinetic:    {P_inlet:.0f} kW")
-            print(f"         Injection energy: {P_inject:.0f} kW")
-            print(f"         TOTAL INPUT:      {P_total:.0f} kW")
-            print(f"         Friction losses:  {P_friction:.0f} kW")
-            print(f"         EXTRACTED:        {P_extracted:.0f} kW")
-            print(f"         System efficiency: {ts.get('system_efficiency', 0)*100:.1f}%")
+            friction_frac = ts.get('friction_fraction', 0)
+            
+            print(f"\n      ⚡ POWER BUDGET (Chimney Physics):")
+            print(f"         Power available (ΔP × Q): {P_available:.0f} kW")
+            print(f"         Friction losses:         {P_friction:.0f} kW ({friction_frac*100:.0f}%)")
+            print(f"         Turbine extraction:      {P_extracted:.0f} kW")
+            print(f"         System efficiency:       {ts.get('system_efficiency', 0)*100:.1f}%")
         
         # Comparison: baseline vs single vs dual
         bs = updraft['baseline_system']
