@@ -13,13 +13,13 @@
     "system_type": "Vertical Updraft Column with Dual-Port Valved Accelerators",
     "column_height": 1600.008309247666,
     "v_baseline": 24.304280148774687,
-    "v_with_valves": 33.33680298079822,
-    "velocity_boost_pct": 37.164329808298845,
-    "total_power_kW": 359.30093498921485,
-    "annual_energy_MWh": 1101.6166666769327,
+    "v_with_valves": 32.591705912958076,
+    "velocity_boost_pct": 34.09862671699497,
+    "total_power_kW": 839.3590733861203,
+    "annual_energy_MWh": 2573.4749190018447,
     "turbine_capex_usd": 4200000,
     "valve_capex_usd": 1310000,
     "total_capex_usd": 6449421.187500734,
-    "payback_years": 117.09011641872941
+    "payback_years": 50.122277391397496
   }
 }

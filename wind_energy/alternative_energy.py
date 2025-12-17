@@ -925,10 +925,11 @@ def design_updraft_turbine_system(
     else:
         K_venturi = 0.08 * n_stages
     
-    # Turbine pressure coefficient (per turbine)
-    # Betz limit: max Cp = 16/27 ≈ 0.593
-    # Turbine creates ΔP = Cp × ½ρv² across rotor
-    Cp_turbine = 0.4  # Conservative: accounts for sub-optimal operation
+    # Turbine power coefficient for ducted device
+    # Research shows practical Cp ≈ 0.45 for ducted turbines
+    # This is the OVERALL power coefficient (not Betz × efficiency)
+    # Ducted turbines can exceed open-rotor Betz limit due to flow concentration
+    Cp_turbine = 0.45  # Practical ducted turbine power coefficient
     
     # Total turbine coefficient (function of how many we install)
     # More turbines = more extraction = more resistance = lower velocity
@@ -936,7 +937,6 @@ def design_updraft_turbine_system(
     # === SOLVE FOR EQUILIBRIUM WITH DIFFERENT TURBINE COUNTS ===
     # Trade-off: More turbines extract more, but slow the flow
     
-    BETZ_LIMIT = 0.593
     best_config = None
     best_power = 0
     
@@ -958,9 +958,9 @@ def design_updraft_turbine_system(
         # No cut-out limit for aerospace-style turbines in ducted flow
         
         # Power extracted by turbines
-        # P = n × ½ρ × A_rotor × v³ × Cp_actual × η
-        Cp_actual = min(BETZ_LIMIT, Cp_turbine)
-        P_per_turbine = 0.5 * RHO_AIR * A_rotor * v_eq**3 * Cp_actual * best_turbine.efficiency
+        # P = n × ½ρ × A_rotor × v³ × Cp
+        # Cp = 0.45 is the practical power coefficient (already includes all losses)
+        P_per_turbine = 0.5 * RHO_AIR * A_rotor * v_eq**3 * Cp_turbine
         P_per_turbine = min(P_per_turbine, best_turbine.rated_power_kW * 1000)
         
         P_total = P_per_turbine * n_turb
